@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/Tencent/WeKnora/internal/common"
@@ -230,6 +231,26 @@ func (g *pgRepository) KeywordsRetrieve(ctx context.Context,
 		return nil, nil
 	}
 	if err != nil {
+		// Graceful degradation for hosts where the pg_search (ParadeDB bm25)
+		// extension cannot run — e.g. CPUs without AVX2, where loading
+		// pg_search.so aborts the backend. Keyword retrieval is then
+		// permanently unavailable while vector retrieval remains healthy;
+		// failing the whole hybrid search because one leg is broken is
+		// worse than returning vector-only results. Opt-in via env so
+		// healthy deployments keep fail-fast semantics.
+		//
+		if os.Getenv("KEYWORD_RETRIEVAL_DEGRADED") == "1" {
+			logger.GetLogger(ctx).Warnf(
+				"[Postgres] Keywords retrieval failed but KEYWORD_RETRIEVAL_DEGRADED=1, degrading to empty keyword results: %v", err)
+			return []*types.RetrieveResult{
+				{
+					Results:             nil,
+					RetrieverEngineType: types.PostgresRetrieverEngineType,
+					RetrieverType:       types.KeywordsRetrieverType,
+					Error:               nil,
+				},
+			}, nil
+		}
 		logger.GetLogger(ctx).Errorf("[Postgres] Keywords retrieval failed: %v", err)
 		return nil, err
 	}

@@ -1,0 +1,32 @@
+# syntax=docker/dockerfile:1
+# Paradedb v0.22.2-pg17 with stock pgdg postgres backend binary swapped in.
+#
+# Why: paradedb's self-compiled `postgres` backend crashes with SIGILL
+# ("Illegal instruction", exit 132) during initdb on older QEMU vCPUs
+# that lack modern instruction sets (SSE4.2/POPCNT/AVX). The stock
+# pgdg Debian build of postgres 17 runs fine on the same hardware.
+# All paradedb extensions (pg_search etc.) live in /usr/lib/postgresql/17/lib
+# and are loaded by the backend at CREATE EXTENSION / query time, so
+# swapping only the server binary keeps full paradedb functionality.
+#
+# The stock bin dir is pre-extracted into pgdg-bin/ (via docker cp from
+# postgres:17) to avoid COPY --from across registries. The WHOLE bin dir
+# is replaced (not just `postgres`) so initdb/psql/pg_ctl versions match
+# the swapped backend exactly (pgdg 17.11). Extension .so files live in
+# ../lib/ and are untouched.
+FROM inno-tcr.tencentcloudcr.com/innostic/poc/postgres-paradedb:v0.22.2-pg17
+
+USER root
+COPY pgdg-bin/ /pgdg-bin/
+# Swap the whole bin dir; keep paradedb's extension libs in ../lib intact
+# AND strip the AVX-requiring preload from the default config: paradedb's
+# postgresql.conf.sample sets shared_preload_libraries='pg_search,...' which
+# makes initdb's `postgres --single` bootstrap dlopen pg_search.so and die
+# with SIGILL on CPUs lacking AVX2 (QEMU v2.5+ vCPUs have SSE2 only).
+# Extensions are still created later by migrations (CREATE EXTENSION) and
+# by /docker-entrypoint-initdb.d/10_bootstrap_paradedb.sh.
+RUN mv /usr/lib/postgresql/17/bin /usr/lib/postgresql/17/bin.paradedb.orig \
+    && cp -a /pgdg-bin /usr/lib/postgresql/17/bin \
+    && rm -rf /pgdg-bin \
+    && sed -i "s/^shared_preload_libraries.*/shared_preload_libraries = 'pg_stat_statements'/" /usr/share/postgresql/17/postgresql.conf.sample
+USER postgres

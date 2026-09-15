@@ -1,0 +1,145 @@
+# WeKnora POC 本地部署编排（独立于根 docker-compose.yml，不拉取应用镜像）
+#
+# - app / frontend / docreader：全部由本仓库源码本地构建（build:），镜像 tag 固定 poc
+# - postgres / redis：本地已有固定 tag 基础镜像（首次一次性获取后离线可用）
+# - 配置全部走 .env.poc，compose 文件不漂移
+# - 数据卷带 -poc 后缀，与开发环境（docker-compose.dev.yml）互不影响
+#
+# 常用命令（见 deploy/poc/poc.sh）：
+#   ./poc.sh build      # 本地构建应用镜像
+#   ./poc.sh up         # 首次/全量启动（migration 由 app 容器自动执行）
+#   ./poc.sh redeploy   # 改代码后一条命令重建+替换
+#   ./poc.sh smoke      # 部署后冒烟
+#   ./poc.sh logs       # 跟踪 app 日志
+#   ./poc.sh down       # 停止（加 --volumes 连数据一起清）
+
+name: weknora-poc
+
+services:
+  app:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.app
+      args:
+        - APK_MIRROR_ARG=${APK_MIRROR_ARG:-}
+        - GOPROXY_ARG=${GOPROXY_ARG:-}
+        - WITH_ANYDOC=${WITH_ANYDOC:-1}
+    image: weknora-app:poc
+    container_name: WeKnora-app-poc
+    ports:
+      - "${APP_PORT:-8080}:8080"
+    volumes:
+      - data-files-poc:/data/files
+      - docreader-tmp-poc:/tmp/docreader:ro
+      - ../../config/config.yaml:/app/config/config.yaml
+      - ../../config/builtin_models.yaml:/app/config/builtin_models.yaml
+      - ../../skills/preloaded:/app/skills/preloaded
+    env_file:
+      - .env.poc
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - LOG_LEVEL=${LOG_LEVEL:-debug}
+      - AUTO_MIGRATE=${AUTO_MIGRATE:-true}
+      - DOCREADER_ADDR=${DOCREADER_ADDR:-docreader:50051}
+      - SSRF_WHITELIST=${SSRF_WHITELIST:-}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      docreader:
+        condition: service_started
+    networks:
+      - weknora-poc-network
+    restart: unless-stopped
+
+  frontend:
+    build:
+      # 前置条件：先在宿主机执行 scripts/build_frontend_dist.sh 生成 frontend/dist
+      # （或用 ./poc.sh frontend-dist 自动执行）
+      context: ../../frontend
+    image: weknora-ui:poc
+    container_name: WeKnora-frontend-poc
+    ports:
+      - "${FRONTEND_PORT:-80}:80"
+    environment:
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-50}
+      - DEFAULT_LOCALE=${DEFAULT_LOCALE:-}
+      - APP_HOST=app
+      - APP_PORT=${APP_BACKEND_PORT:-8080}
+      - APP_SCHEME=http
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - weknora-poc-network
+    restart: unless-stopped
+
+  docreader:
+    build:
+      context: ../..
+      dockerfile: docker/Dockerfile.docreader
+      args:
+        - APT_MIRROR=${APT_MIRROR:-}
+    image: weknora-docreader:poc
+    container_name: WeKnora-docreader-poc
+    # gRPC 无鉴权/TLS，仅供 app 容器在 compose 网络内访问，不发布到宿主机
+    expose:
+      - "50051"
+    volumes:
+      - docreader-tmp-poc:/tmp/docreader
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
+      - LOG_LEVEL=${LOG_LEVEL:-}
+      - DOCREADER_IMAGE_OUTPUT_DIR=/tmp/docreader
+      - MAX_FILE_SIZE_MB=${MAX_FILE_SIZE_MB:-}
+      - SSRF_WHITELIST=${SSRF_WHITELIST:-}
+      - GRPC_TLS_ENABLED=false
+    networks:
+      - weknora-poc-network
+    restart: unless-stopped
+
+  postgres:
+    image: paradedb/paradedb:v0.22.2-pg17
+    container_name: WeKnora-postgres-poc
+    ports:
+      - "${POSTGRES_EXPOSE_PORT:-5432}:5432"
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+    volumes:
+      - postgres-data-poc:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 1m
+    networks:
+      - weknora-poc-network
+    restart: unless-stopped
+
+  redis:
+    image: redis:7.0-alpine
+    container_name: WeKnora-redis-poc
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD}
+    networks:
+      - weknora-poc-network
+    restart: always
+
+networks:
+  weknora-poc-network:
+    driver: bridge
+
+volumes:
+  postgres-data-poc:
+  data-files-poc:
+  docreader-tmp-poc:
