@@ -335,6 +335,13 @@
         </div>
       </div>
     </div>
+
+    <!-- 底部版权与备案信息。与建发致新各系统（如 core-qa 控制台）页脚
+         保持完全一致。此处刻意不走 i18n：ICP 备案号是法定标识，
+         必须在所有语言下保持原文，不能被翻译改写。 -->
+    <footer class="login-footer">
+      ©Copyright 2026 上海建发致新医疗科技集团股份有限公司 All Rights Reserved. 沪ICP备15016750号-1
+    </footer>
   </div>
 </template>
 
@@ -857,6 +864,28 @@ onMounted(async () => {
       radial-gradient(circle at 80% 50%, rgba(255, 255, 255, 0.04) 0%, transparent 50%);
     pointer-events: none;
   }
+}
+
+/* 底部版权/备案行（与建发致新各系统页脚一致）。
+   绝对定位于整个登录布局的最下方、横跨左右两栏：左右两栏各自的
+   padding-bottom（桌面 100px、平板/手机 24px）加上内容区的
+   margin-bottom 已留出足够空间，因此不会与登录卡片或轮播重叠；
+   文案较长时会自动折行，不做截断。 */
+.login-footer {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 3;
+  padding: 10px 16px 14px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 1.6;
+  letter-spacing: 0.2px;
+  color: rgba(255, 255, 255, 0.75);
+  font-family: var(--app-font-family);
+  /* 纯展示文本，不参与交互，避免在极窄视口下挡住下方元素 */
+  pointer-events: none;
 }
 
 .animated-bg {
@@ -1802,6 +1831,12 @@ onMounted(async () => {
 
   .form-header {
     margin-bottom: 24px;
+  }
+
+  /* 窄屏下文案会折成两行，缩小字号与内边距，保持整体不挤压表单 */
+  .login-footer {
+    font-size: 11px;
+    padding: 8px 12px 12px;
   }
 }
 
