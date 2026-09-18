@@ -96,9 +96,9 @@
     </div>
 
     <!-- Logo - Top Left -->
-    <a href="https://github.com/Tencent/WeKnora" target="_blank" class="header-logo" :title="$t('common.github')">
-      <img src="@/assets/img/weknora.png" alt="WeKnora" class="logo-image" />
-    </a>
+    <div class="header-logo">
+      <img src="@/assets/img/Innostic.png" alt="建发致新" class="logo-image" />
+    </div>
 
     <!-- Header Links - Top Right -->
     <div class="header-links">
@@ -1233,11 +1233,17 @@ onMounted(async () => {
   top: 32px;
   left: 50px;
   z-index: 100;
-  cursor: pointer;
+  // 登录页左上角是最深的墨绿 #022c22，品牌深蓝 #071b6d 在其上对比度仅 1.01:1
+  // （近乎不可见），故加白色圆角底衬保留品牌配色。
+  background: #fff;
+  border-radius: 6px;
+  padding: 6px 10px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.12);
 
   .logo-image {
     width: 120px;
     height: auto;
+    display: block;
   }
 }
 

@@ -3,7 +3,7 @@
         <!-- 展开时：Logo + 搜索/折叠按钮同行 -->
         <div class="logo_row" v-if="!uiStore.sidebarCollapsed">
             <div class="logo_box" @click="router.push('/platform/knowledge-bases')" style="cursor: pointer;">
-                <img class="logo" src="@/assets/img/weknora.png" alt="">
+                <img class="logo" src="@/assets/img/Innostic.png" alt="">
                 <sup v-if="isLiteEdition" class="lite-badge">Lite</sup>
             </div>
             <div class="logo_actions">
@@ -1889,9 +1889,14 @@ const onDragHandleMouseDown = (e: MouseEvent) => {
 }
 </style>
 <style lang="less">
-// Dark mode: invert dark logo to light
+// Dark mode: 品牌 logo 为红蓝彩标（深蓝 #071b6d + 红 #df2124），不能反相。
+// 反相会把品牌色变成青色/浅黄；而深蓝在深色侧边栏上对比度仅 1.06:1，近乎不可见。
+// 因此改为加白色圆角底衬，保留原始品牌配色。box-sizing 保持总宽 128px 不变，避免挤压 logo_actions。
 html[theme-mode="dark"] .aside_box .logo_box .logo {
-    filter: invert(1) hue-rotate(180deg);
+    background-color: #fff;
+    border-radius: 4px;
+    padding: 3px 5px;
+    box-sizing: border-box;
 }
 
 // Dark mode: 滚动条在深色背景下需要更亮的颜色才看得见
