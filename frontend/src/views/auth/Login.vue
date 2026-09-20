@@ -337,10 +337,21 @@
     </div>
 
     <!-- 底部版权与备案信息。与建发致新各系统（如 core-qa 控制台）页脚
-         保持完全一致。此处刻意不走 i18n：ICP 备案号是法定标识，
+         保持完全一致：版权句为纯文本，ICP 备案号是链接，指向工信部备案
+         系统并新窗口打开（与 core-qa 页脚的
+         <a href="https://beian.miit.gov.cn/#/Integrated/index" target="_blank">
+         完全对应，含其 20px 左间距）。
+         此处刻意不走 i18n：ICP 备案号是法定标识，
          必须在所有语言下保持原文，不能被翻译改写。 -->
     <footer class="login-footer">
-      ©Copyright 2026 上海建发致新医疗科技集团股份有限公司 All Rights Reserved. 沪ICP备15016750号-1
+      <span>©Copyright 2026 上海建发致新医疗科技集团股份有限公司 All Rights Reserved.</span>
+      <a
+        class="icp-link"
+        href="https://beian.miit.gov.cn/#/Integrated/index"
+        target="_blank"
+        rel="noopener noreferrer"
+        >沪ICP备15016750号-1</a
+      >
     </footer>
   </div>
 </template>
@@ -884,8 +895,38 @@ onMounted(async () => {
   letter-spacing: 0.2px;
   color: rgba(255, 255, 255, 0.75);
   font-family: var(--app-font-family);
-  /* 纯展示文本，不参与交互，避免在极窄视口下挡住下方元素 */
+  /* 版权句是纯展示文本，容器整体不参与交互，避免在极窄视口下
+     挡住其下方元素；唯一需要点击的是备案号链接，单独放开
+     pointer-events（见下），这样既不扩大交互热区，链接又可点击。 */
   pointer-events: none;
+}
+
+/* 备案号链接：指向工信部备案系统（https://beian.miit.gov.cn），
+   新窗口打开，左侧 20px 间距与 core-qa 页脚一致。
+   静止态与版权句同色、无下划线——core-qa 页脚的 .footer .links a
+   同样是 color:#666;text-decoration:none，故此处保持同等克制的观感；
+   仅悬停/键盘聚焦时才加下划线并提亮到纯白，用于表达可点击性。 */
+.login-footer .icp-link {
+  margin-left: 20px;
+  color: inherit;
+  text-decoration: none;
+  white-space: nowrap;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: color 0.2s ease;
+}
+
+.login-footer .icp-link:hover {
+  color: #ffffff;
+  text-decoration: underline;
+}
+
+.login-footer .icp-link:focus-visible {
+  color: #ffffff;
+  text-decoration: underline;
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+  border-radius: 2px;
 }
 
 .animated-bg {
@@ -1844,6 +1885,11 @@ onMounted(async () => {
     font-size: 11px;
     padding: 8px 12px 12px;
   }
+
+  /* 窄屏下备案号大概率被挤到下一行行首，20px 缩进会显得突兀，收到 8px */
+  .login-footer .icp-link {
+    margin-left: 8px;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -1876,9 +1922,12 @@ html[theme-mode="dark"] {
     stroke: rgba(255, 255, 255, 0.25);
   }
 
-  .header-logo .logo-image {
-    filter: invert(1) hue-rotate(180deg) brightness(1.1);
-  }
+  /* 深色主题下不再对 logo 做反色处理。
+     原先这里是 filter: invert(1) hue-rotate(180deg) brightness(1.1)——那是
+     给「透明底的白色 WeKnora 标识」准备的；换成 Innostic.png（品牌深蓝
+     #071b6d + 红 #df2124）后，反色会把品牌色彻底扭曲。而 .header-logo
+     本身始终带白色圆角底衬（见上面的规则，未按主题区分），白底上直接用
+     原色即可，因此这条规则整体删除。 */
 
   .header-link {
     background: rgba(255, 255, 255, 0.12);
