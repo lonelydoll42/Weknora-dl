@@ -130,6 +130,7 @@ function validateDocuments() {
   for (const phrase of [
     'resource_scope_pass', 'bounded_department_grants', 'department_grant_action_limit',
     'api_key_principal_dependency_pass', 'human_shared_agent', 'tenant_public',
+    'download_original', 'Contributor 及 KB 写权限', '其他合法路径继续独立计算并取 OR',
   ]) assert.ok(permission.includes(phrase), phrase);
   for (const phrase of [
     'last_verified_fresh', '25 小时', 'stale_plan', 'expected_record_version',

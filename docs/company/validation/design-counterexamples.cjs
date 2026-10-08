@@ -30,24 +30,45 @@ const sourcePass = (source, issuedAt) => {
 const sessionPass = (u) => u.localActive && !u.pending && !u.sessionRevoked
   && u.issuedAt <= now && u.expiresAt > now && sourcePass(u.sources[u.source], u.issuedAt);
 const READ = ['view', 'query'];
-const ALL = [...READ, 'edit_content', 'manage_members', 'manage_settings', 'delete', 'share'];
+const DOWNLOAD = 'download_original';
+const CONTENT = [...READ, 'edit_content', DOWNLOAD];
+const ALL = [...CONTENT, 'manage_members', 'manage_settings', 'delete', 'share'];
 const roleActions = {
   viewer: READ,
-  contributor: [...READ, 'edit_content'],
+  contributor: CONTENT,
   admin: ALL,
 };
 const resources = {
-  K1: { id: 'K1', tenant: 'T0', creator: 'U3', bindings: { P1: ['D1'] } },
-  K2: { id: 'K2', tenant: 'T0', creator: 'U1', bindings: { P1: ['D1'] } },
-  K3: { id: 'K3', tenant: 'T0', creator: 'U2', bindings: { P1: ['D2'], P2: ['D2'] } },
-  K4: { id: 'K4', tenant: 'T0', creator: 'U1', bindings: { P1: ['D1'] } },
+  K1: { id: 'K1', tenant: 'T0', creator: 'U3', bindings: {
+    P1: [
+      { department: 'D1', actions: CONTENT, paths: ['member'] },
+      { department: 'D1', actions: READ, paths: ['agent'] },
+    ],
+  } },
+  K2: { id: 'K2', tenant: 'T0', creator: 'U1', bindings: {
+    P1: [{ department: 'D1', actions: CONTENT, paths: ['member'] }],
+  } },
+  K3: { id: 'K3', tenant: 'T0', creator: 'U2', bindings: {
+    P1: [
+      { department: 'D2', actions: CONTENT, paths: ['member'] },
+      { department: 'D2', actions: READ, paths: ['agent'] },
+    ],
+    P2: [
+      { department: 'D2', actions: CONTENT, paths: ['member'] },
+      { department: 'D2', actions: READ, paths: ['agent'] },
+    ],
+  } },
+  K4: { id: 'K4', tenant: 'T0', creator: 'U1', bindings: {
+    P1: [{ department: 'D1', actions: READ, paths: ['member', 'share'] }],
+  } },
   K5: { id: 'K5', tenant: 'T0', creator: 'U1', bindings: {} },
   K6: { id: 'K6', tenant: 'T0', creator: 'U1', bindings: {}, publicActions: READ },
   T0: { id: 'T0', tenant: 'T0', workspace: true, bindings: {} },
 };
-const deptGrant = (u, r, action) =>
-  [...READ, 'edit_content'].includes(action)
-  && (r.bindings[u.source] || []).some((d) => (u.departments[u.source] || []).includes(d));
+const deptGrant = (u, r, action, route) =>
+  (r.bindings[u.source] || []).some((binding) =>
+    binding.actions.includes(action) && binding.paths.includes(route)
+    && (u.departments[u.source] || []).includes(binding.department));
 const scopePass = (u, r, action, route) => {
   if (r.workspace) return route === 'member';
   const exported = u.tenant === 'T1' && READ.includes(action)
@@ -55,7 +76,7 @@ const scopePass = (u, r, action, route) => {
   if (u.internalToT0) {
     const internalPass = (u.tenant === r.tenant && u.manualAdmin && u.role === 'admin')
       || (r.publicActions || []).includes(action)
-      || deptGrant(u, r, action)
+      || deptGrant(u, r, action, route)
       || u.userScopes.some((s) => s.kb === r.id && s.action === action
         && s.route === route && s.expiresAt > now);
     return internalPass && (u.tenant === r.tenant || exported);
@@ -78,11 +99,15 @@ const allow = (u, resourceId, action, route = 'member', agentMode = 'selected') 
   }
   return false;
 };
+const humanAllow = (u, resourceId, action, { explicitAgent = false, agentMode = 'selected' } = {}) =>
+  explicitAgent ? allow(u, resourceId, action, 'agent', agentMode)
+    : ['member', 'share', 'agent'].some((route) => allow(u, resourceId, action, route, agentMode));
 const key = {
   revoked: false, expiresAt: now + 20 * HOUR, issuedAt: now - 3 * HOUR,
-  resources: ['K1'], actions: READ, principalActive: true, boundUser: null,
+  resources: ['K1'], actions: [...READ, DOWNLOAD], principalActive: true, boundUser: null,
 };
 const keyAllow = (k, id, action) => !k.revoked && k.expiresAt > now
+  && Number.isFinite(k.issuedAt) && k.issuedAt <= now
   && k.principalActive && k.resources.includes(id) && k.actions.includes(action)
   && (!k.boundUser || (k.boundUser.localActive && !k.boundUser.pending
     && sourcePass(k.boundUser.sources[k.dependency], k.issuedAt)));
@@ -96,6 +121,19 @@ const test = (name, check) => {
 };
 const withSource = (delta) => ({ ...user, sources: { ...user.sources, P1: { ...freshSource, ...delta } } });
 test('U1 bound K1 read', () => assert.equal(allow(user, 'K1', 'view'), true));
+test('contributor cannot edit read-only K4 binding', () =>
+  assert.equal(allow({ ...user, role: 'contributor' }, 'K4', 'edit_content'), false));
+test('department binding only grants declared paths', () => {
+  assert.equal(deptGrant(user, resources.K2, 'view', 'member'), true);
+  assert.equal(deptGrant(user, resources.K2, 'view', 'agent'), false);
+  assert.equal(deptGrant(user, resources.K1, 'edit_content', 'agent'), false);
+});
+test('viewer previews authorized content but cannot download original', () => {
+  assert.equal(allow(user, 'K1', 'view'), true);
+  assert.equal(allow(user, 'K1', DOWNLOAD), false);
+});
+test('contributor downloads explicitly authorized original', () =>
+  assert.equal(allow({ ...user, role: 'contributor' }, 'K1', DOWNLOAD), true));
 test('U1 unbound department K3 denied despite viewer', () => assert.equal(allow(user, 'K3', 'view'), false));
 test('unbound K5 denied even creator', () => assert.equal(allow(user, 'K5', 'view'), false));
 test('public read allowed', () => assert.equal(allow(user, 'K6', 'query'), true));
@@ -119,6 +157,16 @@ test('manual admin scope exemption', () => assert.equal(allow(admin, 'K5', 'view
 test('manual admin cannot bypass local block', () => assert.equal(allow({ ...admin, localActive: false }, 'K3', 'view'), false));
 const receiver = { ...user, id: 'U7', tenant: 'T1', source: 'P2', internalToT0: false };
 test('receiver share K4 read', () => assert.equal(allow(receiver, 'K4', 'view', 'share'), true));
+test('failed member path does not close legitimate shared access', () => {
+  assert.equal(allow(receiver, 'K4', 'view', 'member'), false);
+  assert.equal(humanAllow(receiver, 'K4', 'view'), true);
+});
+test('global account block closes all human paths', () =>
+  assert.equal(humanAllow({ ...receiver, localActive: false }, 'K4', 'view'), false));
+test('explicit Agent mismatch cannot borrow legitimate org share', () =>
+  assert.equal(humanAllow(receiver, 'K4', 'view', { explicitAgent: true }), false));
+test('contributor cannot download through viewer KB share', () =>
+  assert.equal(allow({ ...receiver, role: 'contributor' }, 'K4', DOWNLOAD, 'share'), false));
 test('share stays read only', () => assert.equal(allow(receiver, 'K4', 'edit_content', 'share'), false));
 test('tenant_public not cross-tenant', () => assert.equal(allow(receiver, 'K6', 'view', 'share'), false));
 test('switching tenant does not remove internal department gate', () => assert.equal(allow({
@@ -159,6 +207,18 @@ test('P2 new login allowed after P1 disable', () => assert.equal(allow(rebound, 
 test('P2 new login cannot reuse P1 department', () => assert.equal(allow(rebound, 'K1', 'view'), false));
 test('all old P2 sessions revoked on P1 event', () => assert.equal(sessionPass({ ...rebound, sessionRevoked: true }), false));
 test('independent scoped Key read', () => assert.equal(keyAllow(key, 'K1', 'query'), true));
+test('retrieve Key downloads without human Contributor gate', () =>
+  assert.equal(keyAllow(key, 'K1', DOWNLOAD), true));
+test('Key without declared download action cannot download original', () =>
+  assert.equal(keyAllow({ ...key, actions: READ }, 'K1', DOWNLOAD), false));
+test('future bound Key issuance denied with healthy source', () =>
+  assert.equal(keyAllow({ ...key, issuedAt: now + HOUR, boundUser: user, dependency: 'P1' }, 'K1', 'view'), false));
+test('future independent Key issuance denied', () =>
+  assert.equal(keyAllow({ ...key, issuedAt: now + HOUR }, 'K1', 'view'), false));
+test('missing Key issuance time denied', () =>
+  assert.equal(keyAllow({ ...key, issuedAt: null }, 'K1', 'view'), false));
+test('Key issuance equal to now allowed with healthy source', () =>
+  assert.equal(keyAllow({ ...key, issuedAt: now, boundUser: user, dependency: 'P1' }, 'K1', 'view'), true));
 test('Key cannot borrow human resource scope', () => assert.equal(keyAllow(key, 'K3', 'view'), false));
 test('Key cannot borrow human action', () => assert.equal(keyAllow(key, 'K1', 'edit_content'), false));
 test('independent Key does not depend on provider outage', () => assert.equal(keyAllow(key, 'K1', 'view'), true));
